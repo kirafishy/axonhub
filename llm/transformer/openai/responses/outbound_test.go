@@ -280,6 +280,57 @@ func TestOutboundTransformer_TransformRequest_ReplaysProviderRawToolsAndToolChoi
 	require.Len(t, toolChoice["tools"], 1)
 }
 
+func TestResponsesToolRoundTrip_PreservesUnknownTools(t *testing.T) {
+	inbound := NewInboundTransformer()
+	inboundReq := &httpclient.Request{
+		Body: []byte(`{
+			"model": "gpt-4o",
+			"input": "Search and run code.",
+			"tools": [
+				{"type":"x_search","name":"search_docs","max_num_results":10,"filters":{"domains":["example.com"]}},
+				{"type":"code_interpreter","container":{"type":"auto","memory_limit":"4g"},"file_ids":["file_1"]},
+				{"type":"google_search","domains":["example.com"],"max_results":10}
+			]
+		}`),
+	}
+
+	llmReq, err := inbound.TransformRequest(context.Background(), inboundReq)
+	require.NoError(t, err)
+
+	toolTypes := make([]string, 0, len(llmReq.Tools))
+	for _, tool := range llmReq.Tools {
+		toolTypes = append(toolTypes, tool.Type)
+	}
+	require.Equal(t, []string{
+		responsesRawToolPlaceholderType,
+		responsesRawToolPlaceholderType,
+		responsesRawToolPlaceholderType,
+	}, toolTypes)
+
+	require.NotNil(t, llmReq.ProviderExtensions)
+	require.NotNil(t, llmReq.ProviderExtensions.OpenAIResponses)
+	require.NotNil(t, llmReq.ProviderExtensions.OpenAIResponses.Request)
+	require.Len(t, llmReq.ProviderExtensions.OpenAIResponses.Request.RawTools, 3)
+	require.Equal(t, "x_search", llmReq.ProviderExtensions.OpenAIResponses.Request.RawTools[0].Type)
+	require.Equal(t, "code_interpreter", llmReq.ProviderExtensions.OpenAIResponses.Request.RawTools[1].Type)
+	require.Equal(t, "google_search", llmReq.ProviderExtensions.OpenAIResponses.Request.RawTools[2].Type)
+
+	outbound, err := NewOutboundTransformer("https://api.openai.com", "test-api-key")
+	require.NoError(t, err)
+
+	httpReq, err := outbound.TransformRequest(context.Background(), llmReq)
+	require.NoError(t, err)
+
+	var payload struct {
+		Tools []json.RawMessage `json:"tools"`
+	}
+	require.NoError(t, json.Unmarshal(httpReq.Body, &payload))
+	require.Len(t, payload.Tools, 3)
+	require.JSONEq(t, `{"type":"x_search","name":"search_docs","max_num_results":10,"filters":{"domains":["example.com"]}}`, string(payload.Tools[0]))
+	require.JSONEq(t, `{"type":"code_interpreter","container":{"type":"auto","memory_limit":"4g"},"file_ids":["file_1"]}`, string(payload.Tools[1]))
+	require.JSONEq(t, `{"type":"google_search","domains":["example.com"],"max_results":10}`, string(payload.Tools[2]))
+}
+
 func TestOutboundTransformer_TransformRequest_ReplaysNamespaceTool(t *testing.T) {
 	inbound := NewInboundTransformer()
 	inboundReq := &httpclient.Request{

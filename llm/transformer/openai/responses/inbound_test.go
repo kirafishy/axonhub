@@ -242,7 +242,9 @@ func TestInboundTransformer_TransformRequest(t *testing.T) {
 			},
 			expectError: false,
 			validate: func(t *testing.T, result *llm.Request) {
-				require.Len(t, result.Tools, 1)
+				require.Len(t, result.Tools, 2)
+				require.Equal(t, responsesRawToolPlaceholderType, result.Tools[0].Type)
+				require.Equal(t, "function", result.Tools[1].Type)
 				require.NotNil(t, result.ProviderExtensions)
 				require.NotNil(t, result.ProviderExtensions.OpenAIResponses)
 				require.NotNil(t, result.ProviderExtensions.OpenAIResponses.Request)

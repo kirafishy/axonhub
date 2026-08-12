@@ -21,6 +21,8 @@ import (
 
 var _ transformer.Inbound = (*InboundTransformer)(nil)
 
+const responsesRawToolPlaceholderType = "__openai_responses_raw_tool__"
+
 // InboundTransformer implements transformer.Inbound for OpenAI Responses API format.
 type InboundTransformer struct{}
 
@@ -846,8 +848,9 @@ func convertToolsToLLM(tools []Tool) ([]llm.Tool, error) {
 			}
 
 		default:
-			// Skip unsupported tool types
-			continue
+			// The complete definition remains in ProviderExtensions.RawTools; this opaque
+			// placeholder must not be interpreted as ordinary tool semantics.
+			result = append(result, llm.Tool{Type: responsesRawToolPlaceholderType})
 		}
 	}
 
